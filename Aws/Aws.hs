@@ -99,7 +99,7 @@ aws :: (Transaction r a, MonadIO io)
       -> ServiceConfiguration r NormalQuery 
       -> HTTP.Manager 
       -> r 
-      -> io (Response (ResponseMetadata a) a)
+      -> io (Response (First (ResponseMetadata a)) a)
 aws = unsafeAws
 
 -- | Run an AWS transaction, with HTTP manager and metadata returned in an 'IORef'.
@@ -117,7 +117,7 @@ awsRef :: (Transaction r a, MonadIO io)
       => Configuration 
       -> ServiceConfiguration r NormalQuery 
       -> HTTP.Manager 
-      -> IORef (ResponseMetadata a) 
+      -> IORef (First (ResponseMetadata a))
       -> r 
       -> io a
 awsRef = unsafeAwsRef
@@ -136,7 +136,7 @@ simpleAws :: (Transaction r a, MonadIO io)
             => Configuration 
             -> ServiceConfiguration r NormalQuery
             -> r 
-            -> io (Response (ResponseMetadata a) a)
+            -> io (Response (First (ResponseMetadata a)) a)
 simpleAws cfg scfg request = liftIO $ HTTP.withManager $ \manager -> aws cfg scfg manager request
 
 -- | Run an AWS transaction, /without/ HTTP manager and with metadata returned in an 'IORef'.
@@ -153,7 +153,7 @@ simpleAws cfg scfg request = liftIO $ HTTP.withManager $ \manager -> aws cfg scf
 simpleAwsRef :: (Transaction r a, MonadIO io)
             => Configuration 
             -> ServiceConfiguration r NormalQuery 
-            -> IORef (ResponseMetadata a) 
+            -> IORef (First (ResponseMetadata a))
             -> r 
             -> io a
 simpleAwsRef cfg scfg metadataRef request = liftIO $ HTTP.withManager $ 
@@ -166,10 +166,9 @@ simpleAwsRef cfg scfg metadataRef request = liftIO $ HTTP.withManager $
 -- All errors are caught and wrapped in the 'Response' value.
 unsafeAws
   :: (ResponseConsumer r a,
-      Monoid (ResponseMetadata a),
       SignQuery r,
       MonadIO io) =>
-     Configuration -> ServiceConfiguration r NormalQuery -> HTTP.Manager -> r -> io (Response (ResponseMetadata a) a)
+     Configuration -> ServiceConfiguration r NormalQuery -> HTTP.Manager -> r -> io (Response (First (ResponseMetadata a)) a)
 unsafeAws cfg scfg manager request = liftIO $ do
   metadataRef <- newIORef mempty
   resp <- attemptIO (id :: E.SomeException -> E.SomeException) $
@@ -184,10 +183,9 @@ unsafeAws cfg scfg manager request = liftIO $ do
 -- Errors are not caught, and need to be handled with exception handlers.
 unsafeAwsRef
   :: (ResponseConsumer r a,
-      Monoid (ResponseMetadata a),
       SignQuery r,
       MonadIO io) =>
-     Configuration -> ServiceConfiguration r NormalQuery -> HTTP.Manager -> IORef (ResponseMetadata a) -> r -> io a
+     Configuration -> ServiceConfiguration r NormalQuery -> HTTP.Manager -> IORef (First (ResponseMetadata a)) -> r -> io a
 unsafeAwsRef cfg info manager metadataRef request = liftIO $ do
   sd <- signatureData <$> timeInfo <*> credentials $ cfg
   let q = signQuery request info sd
@@ -221,9 +219,9 @@ awsIteratedAll :: (IteratedTransaction r a, MonadIO io)
                   -> ServiceConfiguration r NormalQuery
                   -> HTTP.Manager
                   -> r
-                  -> io (Response [ResponseMetadata a] a)
+                  -> io (Response [Maybe (ResponseMetadata a)] a)
 awsIteratedAll cfg scfg manager req_ = go req_ Nothing
-  where go request prevResp = do Response meta respAttempt <- aws cfg scfg manager request
+  where go request prevResp = do Response (First meta) respAttempt <- aws cfg scfg manager request
                                  case maybeCombineIteratedResponse prevResp <$> respAttempt of
                                    f@(Failure _) -> return (Response [meta] f)
                                    s@(Success resp) -> 

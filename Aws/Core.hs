@@ -154,12 +154,12 @@ type HTTPResponseConsumer a =  HTTP.Status
 -- The request is also passed for possibly required additional metadata.
 -- 
 -- Note that for debugging, there is an instance for 'L.ByteString'.
-class Monoid (ResponseMetadata resp) => ResponseConsumer req resp where
+class ResponseConsumer req resp where
     -- | Metadata associated with a response. Typically there is one metadata type for each AWS service.
     type ResponseMetadata resp
 
     -- | Response parser. Takes the corresponding request, an 'IORef' for metadata, and HTTP response data.
-    responseConsumer :: req -> IORef (ResponseMetadata resp) -> HTTPResponseConsumer resp
+    responseConsumer :: req -> IORef (First (ResponseMetadata resp)) -> HTTPResponseConsumer resp
 
 -- | Does not parse response. For debugging.
 instance ResponseConsumer r (HTTP.Response L.ByteString) where

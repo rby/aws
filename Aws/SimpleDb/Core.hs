@@ -38,10 +38,6 @@ data SdbMetadata
       }
     deriving (Show, Typeable)
 
-instance Monoid SdbMetadata where
-    mempty = SdbMetadata Nothing Nothing
-    SdbMetadata r1 b1 `mappend` SdbMetadata r2 b2 = SdbMetadata (r1 `mplus` r2) (b1 `mplus` b2)
-
 data SdbConfiguration qt
     = SdbConfiguration {
         sdbiProtocol :: Protocol
@@ -128,15 +124,15 @@ sdbSignQuery q si sd
                        , Blaze.copyByteString $ path
                        , HTTP.renderQueryBuilder False q']
 
-sdbResponseConsumer :: (Cu.Cursor -> Response SdbMetadata a)
-                    -> IORef SdbMetadata
+sdbResponseConsumer :: (Cu.Cursor -> Response (First SdbMetadata) a)
+                    -> IORef (First SdbMetadata)
                     -> HTTPResponseConsumer a
 sdbResponseConsumer inner metadataRef status headers source
     = xmlCursorConsumer parse metadataRef status headers source
     where parse cursor
               = do let requestId' = listToMaybe $ cursor $// elContent "RequestID"
                    let boxUsage' = listToMaybe $ cursor $// elContent "BoxUsage"
-                   tellMetadata $ SdbMetadata requestId' boxUsage'
+                   tellMetadata $ First . Just $ SdbMetadata requestId' boxUsage'
                    case cursor $/ Cu.laxElement "Error" of
                      []      -> inner cursor
                      (err:_) -> fromError err

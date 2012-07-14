@@ -2,7 +2,6 @@ module Aws.Sqs.Core where
 
 import           Aws.Core
 import           Aws.S3.Core                    (LocationConstraint, locationUsClassic, locationUsWest, locationApSouthEast, locationApNorthEast, locationEu)
-import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Attempt                   (Attempt(..))
 import           Data.Conduit                   (($$+-))
@@ -54,10 +53,6 @@ data SqsMetadata
       , sqsMRequestId :: Maybe T.Text
       }
     deriving (Show)
-
-instance Monoid SqsMetadata where
-    mempty = SqsMetadata Nothing Nothing
-    SqsMetadata a1 r1 `mappend` SqsMetadata a2 r2 = SqsMetadata (a1 `mplus` a2) (r1 `mplus` r2)
 
 data SqsAuthorization 
     = SqsAuthorizationHeader 
@@ -195,7 +190,7 @@ sqsSignQuery SqsQuery{..} SqsConfiguration{..} SignatureData{..}
       makeAuthQuery = [("Signature", sig)]
 
 sqsResponseConsumer :: HTTPResponseConsumer a
-                    -> IORef SqsMetadata
+                    -> IORef (First SqsMetadata)
                     -> HTTPResponseConsumer a
 sqsResponseConsumer inner metadata status headers source = do
       let headerString = fmap T.decodeUtf8 . flip lookup headers
@@ -203,14 +198,14 @@ sqsResponseConsumer inner metadata status headers source = do
       let requestId = headerString "x-amz-request-id"
 
       let m = SqsMetadata { sqsMAmzId2 = amzId2, sqsMRequestId = requestId }
-      liftIO $ tellMetadataRef metadata m
+      liftIO $ tellMetadataRef metadata (First (Just m))
 
       if status >= HTTP.status400
         then sqsErrorResponseConsumer status headers source
         else inner status headers source
 
-sqsXmlResponseConsumer :: (Cu.Cursor -> Response SqsMetadata a)
-                       -> IORef SqsMetadata
+sqsXmlResponseConsumer :: (Cu.Cursor -> Response (First SqsMetadata) a)
+                       -> IORef (First SqsMetadata)
                        -> HTTPResponseConsumer a
 sqsXmlResponseConsumer parse metadataRef = sqsResponseConsumer (xmlCursorConsumer parse metadataRef) metadataRef
 

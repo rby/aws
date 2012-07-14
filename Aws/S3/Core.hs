@@ -112,10 +112,6 @@ data S3Metadata
       }
     deriving (Show, Typeable)
 
-instance Monoid S3Metadata where
-    mempty = S3Metadata Nothing Nothing
-    S3Metadata a1 r1 `mappend` S3Metadata a2 r2 = S3Metadata (a1 `mplus` a2) (r1 `mplus` r2)
-
 data S3Query
     = S3Query {
         s3QMethod :: Method
@@ -198,28 +194,28 @@ s3SignQuery S3Query{..} S3Configuration{..} SignatureData{..}
             , ("Signature", sig)]
 
 s3ResponseConsumer :: HTTPResponseConsumer a
-                   -> IORef S3Metadata
+                   -> IORef (First S3Metadata)
                    -> HTTPResponseConsumer a
 s3ResponseConsumer inner metadata status headers source = do
       let headerString = fmap T.decodeUtf8 . flip lookup headers
       let amzId2 = headerString "x-amz-id-2"
       let requestId = headerString "x-amz-request-id"
 
-      let m = S3Metadata { s3MAmzId2 = amzId2, s3MRequestId = requestId }
+      let m = First . Just $ S3Metadata { s3MAmzId2 = amzId2, s3MRequestId = requestId }
       liftIO $ tellMetadataRef metadata m
 
       if status >= HTTP.status400
         then s3ErrorResponseConsumer status headers source
         else inner status headers source
 
-s3XmlResponseConsumer :: (Cu.Cursor -> Response S3Metadata a)
-                      -> IORef S3Metadata
+s3XmlResponseConsumer :: (Cu.Cursor -> Response (First S3Metadata) a)
+                      -> IORef (First S3Metadata)
                       -> HTTPResponseConsumer a
 s3XmlResponseConsumer parse metadataRef =
     s3ResponseConsumer (xmlCursorConsumer parse metadataRef) metadataRef
 
 s3BinaryResponseConsumer :: HTTPResponseConsumer a
-                         -> IORef S3Metadata
+                         -> IORef (First S3Metadata)
                          -> HTTPResponseConsumer a
 s3BinaryResponseConsumer inner metadataRef = s3ResponseConsumer inner metadataRef
 

@@ -19,7 +19,6 @@ module Aws.Ses.Core
     ) where
 
 import           Aws.Core
-import           Control.Monad                  (mplus)
 import           Data.ByteString.Char8          ({-IsString-})
 import           Data.IORef
 import           Data.Maybe
@@ -52,10 +51,6 @@ data SesMetadata
         requestId :: Maybe Text
       }
     deriving (Show, Typeable)
-
-instance Monoid SesMetadata where
-    mempty = SesMetadata Nothing
-    SesMetadata r1 `mappend` SesMetadata r2 = SesMetadata (r1 `mplus` r2)
 
 data SesConfiguration qt
     = SesConfiguration {
@@ -109,14 +104,14 @@ sesSignQuery query si sd
                                ]
       query' = ("AWSAccessKeyId", accessKeyId) : query
 
-sesResponseConsumer :: (Cu.Cursor -> Response SesMetadata a)
-                    -> IORef SesMetadata
+sesResponseConsumer :: (Cu.Cursor -> Response (First SesMetadata) a)
+                    -> IORef (First SesMetadata)
                     -> HTTPResponseConsumer a
 sesResponseConsumer inner metadataRef status = xmlCursorConsumer parse metadataRef status
     where
       parse cursor = do
         let requestId' = listToMaybe $ cursor $// elContent "RequestID"
-        tellMetadata $ SesMetadata requestId'
+        tellMetadata $ First . Just $ SesMetadata requestId'
         case cursor $/ Cu.laxElement "Error" of
           []      -> inner cursor
           (err:_) -> fromError err
