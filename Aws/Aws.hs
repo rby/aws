@@ -231,8 +231,8 @@ getProxy = do
   where parseProxy ('h':'t':'t':'p':':':'/':'/':r) = parse' r
         parseProxy ('h':'t':'t':'p':'s':':':'/':'/':r) = parse' r
         parseProxy x = parse' x
-        toPort "" = 80
-        toPort s  = read s
+        toPort (':':s)  = read s
+        toPort _ = 80
         parse' r = let (h, p) = break (== ':') r
                    in (BS.pack h, toPort p)
 proxied :: HTTP.Request m -> IO (HTTP.Request m)
