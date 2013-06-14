@@ -35,6 +35,7 @@ import           Control.Monad.Trans
 import           Control.Monad.Trans.Resource
 import           Data.Attempt         (Attempt(Success, Failure))
 import qualified Data.ByteString      as B
+import qualified Data.ByteString.Char8 as BS
 import qualified Data.CaseInsensitive as CI
 import qualified Data.Conduit         as C
 import qualified Data.Conduit.List    as CL
@@ -45,6 +46,7 @@ import qualified Data.Text.Encoding   as T
 import qualified Data.Text.IO         as T
 import qualified Network.HTTP.Conduit as HTTP
 import           System.IO            (stderr)
+import qualified System.Environment   as Env
 
 -- | The severity of a log message, in rising order.
 data LogLevel
@@ -213,7 +215,7 @@ unsafeAwsRef cfg info manager metadataRef request = do
   sd <- liftIO $ signatureData <$> timeInfo <*> credentials $ cfg
   let q = signQuery request info sd
   liftIO $ logger cfg Debug $ T.pack $ "String to sign: " ++ show (sqStringToSign q)
-  let httpRequest = queryToHttpRequest q
+  httpRequest <- liftIO . proxied $ queryToHttpRequest q
   liftIO $ logger cfg Debug $ T.pack $ "Host: " ++ show (HTTP.host httpRequest)
   resp <- do
       hresp <- HTTP.http httpRequest manager
@@ -221,6 +223,22 @@ unsafeAwsRef cfg info manager metadataRef request = do
         logger cfg Debug $ T.decodeUtf8 $ "Response header '" `mappend` CI.original hname `mappend` "': '" `mappend` hvalue `mappend` "'"
       responseConsumer request metadataRef hresp
   return resp
+-- | Gets the proxy from env
+getProxy :: IO (Maybe (B.ByteString, Int))
+getProxy = do
+    mp <- lookup "http_proxy" <$> Env.getEnvironment
+    return $ parseProxy <$> mp
+  where parseProxy ('h':'t':'t':'p':':':'/':'/':r) = parse' r
+        parseProxy ('h':'t':'t':'p':'s':':':'/':'/':r) = parse' r
+        parseProxy x = parse' x
+        toPort "" = 80
+        toPort s  = read s
+        parse' r = let (h, p) = break (== ':') r
+                   in (BS.pack h, toPort p)
+proxied :: HTTP.Request m -> IO (HTTP.Request m)
+proxied r = do
+    p <- getProxy
+    return $ maybe r (flip (uncurry HTTP.addProxy) r) p
 
 -- | Run a URI-only AWS transaction. Returns a URI that can be sent anywhere. Does not work with all requests.
 -- 
